@@ -1,0 +1,12 @@
+[package]
+name = "pattern"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chumsky = "0.11.1"
+clap = { version = "4.5.47", features = ["derive"] }
+itertools = "0.14.0"
+
+[profile.release]
+debug = true
