@@ -1,4 +1,4 @@
-use std::{fmt::Display, marker::PhantomData, str::FromStr};
+use std::{collections::HashSet, convert::Infallible, fmt::Display, str::FromStr};
 
 use chumsky::{
     IterParser, Parser,
@@ -9,9 +9,9 @@ use chumsky::{
 };
 use itertools::Itertools;
 
-use crate::{bag::Bag, condition::Condition, dedup::FullDedup, queue::Queue};
+use crate::{bag::Bag, condition::Condition, util::FullDedup, queue::Queue};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Pattern<B>
 where
     B: Bag,
@@ -26,7 +26,6 @@ where
     All(Box<Self>),                          // [T]!
     Condition(Box<Self>, Box<Condition<B>>), // T{P}
     Unique(Box<Self>),                       // T?
-    Phantom(PhantomData<B>),
 }
 
 impl<B> Pattern<B>
@@ -39,7 +38,7 @@ where
         let r = p.parse(&v);
         if r.has_errors() {
             for e in r.into_errors() {
-                return Err(e.to_string())
+                return Err(e.to_string());
             }
 
             std::process::exit(1);
@@ -96,9 +95,10 @@ where
 
             let seq = cond
                 .clone()
-                .foldl(just(',').or_not().ignore_then(cond.clone()).repeated(), |a, b| {
-                    Self::Seq(Box::new(a), Box::new(b))
-                })
+                .foldl(
+                    just(',').or_not().ignore_then(cond.clone()).repeated(),
+                    |a, b| Self::Seq(Box::new(a), Box::new(b)),
+                )
                 .or(cond.clone())
                 .boxed();
 
@@ -108,9 +108,10 @@ where
 
             let either = unique
                 .clone()
-                .foldl(just(';').or(just('\n')).then(unique.clone()).repeated(), |a, (_, b)| {
-                    Self::Either(Box::new(a), Box::new(b))
-                })
+                .foldl(
+                    just(';').or(just('\n')).then(unique.clone()).repeated(),
+                    |a, (_, b)| Self::Either(Box::new(a), Box::new(b)),
+                )
                 .or(unique.clone())
                 .boxed();
 
@@ -120,7 +121,7 @@ where
 
     pub fn count(&self) -> usize {
         match self {
-            Self::Phantom(..) => unsafe { std::hint::unreachable_unchecked() },
+            // Self::Phantom(..) => unsafe { std::hint::unreachable_unchecked() },
             Self::Single(..) => 1,
             Self::Either(t, u) => t.count() + u.count(),
             Self::Seq(t, u) => t.count() * u.count(),
@@ -137,9 +138,13 @@ where
         }
     }
 
+    pub fn set(&self) -> HashSet<Queue> {
+        self.queues().into_iter().collect()
+    }
+
     pub fn queues(&self) -> Vec<Queue> {
         match self {
-            Self::Phantom(..) => unsafe { std::hint::unreachable_unchecked() },
+            // Self::Phantom(..) => unsafe { std::hint::unreachable_unchecked() },
             Self::Single(c) => vec![Queue::new(vec![*c])],
             Self::Either(t, u) => [t.queues(), u.queues()].concat(),
             Self::Seq(t, u) => {
@@ -195,6 +200,36 @@ where
             }
         }
     }
+
+    pub fn find(universe: &[Queue], set: &[Queue], opt_level: Optimization) -> Option<Self> {
+        match opt_level {
+            Optimization::Exhaustive => Self::find_exhaustive(universe, set),
+            _ => todo!(),
+        }
+    }
+
+    // Checks if candidate matches all of `set` and none outside of `set` in `universe`
+    pub fn check(&self, _universe: &[Queue], set: &[Queue]) -> bool {
+        let qs = self.queues();
+
+        qs.iter().all(|x| set.contains(x)) && !qs.iter().any(|x| !set.contains(x))
+    }
+
+    pub fn size(&self) -> usize {
+        match self {
+            Self::All(c) => 1 + c.size(),
+            Self::Any(c) => 1 + c.len(),
+            Self::Condition(c, p) => 1 + c.size() + p.size(),
+            Self::Either(a, b) => 1 + a.size() + b.size(),
+            Self::Group(c) => 1 + c.size(),
+            // Self::Phantom(..) => 1,
+            Self::Seq(a, b) => 1 + a.size() + b.size(),
+            Self::Single(..) => 1,
+            Self::Take(a, ..) => 1 + a.size(),
+            Self::Unique(a) => 1 + a.size(),
+            Self::Wildcard => 1,
+        }
+    }
 }
 
 impl<B> Display for Pattern<B>
@@ -206,7 +241,7 @@ where
             f,
             "{}",
             match self {
-                Self::Phantom(..) => String::new(),
+                // Self::Phantom(..) => String::new(),
                 Self::Single(p) => format!("{p}"),
                 Self::Either(t, u) => format!("{t};{u}"),
                 Self::Seq(t, u) => format!("{t}{u}"),
@@ -225,9 +260,28 @@ where
     }
 }
 
-impl<B> FromStr for Pattern<B> where B: Bag {
+impl<B> FromStr for Pattern<B>
+where
+    B: Bag,
+{
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::new(s)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Optimization {
+    None,
+    Exhaustive,
+}
+
+impl FromStr for Optimization {
+    type Err = Infallible;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "0" => Ok(Self::None),
+            _ => Ok(Self::Exhaustive),
+        }
     }
 }

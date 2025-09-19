@@ -10,7 +10,7 @@ use chumsky::{
 
 use crate::{bag::Bag, pattern::Pattern, queue::Queue};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Condition<B>
 where
     B: Bag,
@@ -22,6 +22,7 @@ where
     Location(Pattern<B>, usize),    // @A=N
     And(Box<Self>, Box<Self>),      // A&B
     Or(Box<Self>, Box<Self>),       // A|B
+    // idk why but commenting this out causes like 600 type errors
     Phantom(PhantomData<B>),
 }
 
@@ -48,7 +49,7 @@ where
                 .map(|(_, p, _, n)| Self::Count(p, n));
             let location = group((just('@'), recurse.clone(), just('='), number))
                 .map(|(_, p, _, n)| Self::Location(p, n));
-            
+
             let gr = a
                 .delimited_by(just('('), just(')'))
                 .map(|x| Self::Group(Box::new(x)));
@@ -132,6 +133,16 @@ where
                 }
                 false
             }
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        match self {
+            Self::After(a, b) | Self::Before(a, b) => 1 + a.size() + b.size(),
+            Self::And(a, b) | Self::Or(a, b) => 1 + a.size() + b.size(),
+            Self::Count(a, ..) | Self::Location(a, ..) => 1 + a.size(),
+            Self::Group(a) => 1 + a.size(),
+            Self::Phantom(..) => 0,
         }
     }
 }

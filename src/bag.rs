@@ -1,12 +1,14 @@
+use std::fmt::Debug;
+
 pub trait Bag
 where
-    Self: Clone + Send + Sync + 'static,
+    Self: PartialEq + Debug + Clone + Send + Sync + 'static,
 {
     fn has(piece: char) -> bool;
     fn wildcard() -> Vec<char>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Bag7;
 impl Bag for Bag7 {
     fn has(piece: char) -> bool {

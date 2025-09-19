@@ -7,8 +7,7 @@ pub trait FullDedup {
         T: Eq + Hash + Clone,
     {
         let mut seen = HashSet::new();
-        self
-            .into_iter()
+        self.into_iter()
             .filter_map(|item| {
                 if seen.insert(item.clone()) {
                     Some(item)
@@ -21,3 +20,4 @@ pub trait FullDedup {
 }
 
 impl<T> FullDedup for T where Self: IntoIterator + FromIterator<<T as IntoIterator>::Item> {}
+

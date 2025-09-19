@@ -1,9 +1,23 @@
-use std::{ops::Deref, str::FromStr};
+use std::{ops::Deref, str::FromStr, time::Instant};
 
-use crate::{bag::Bag, find::Optimization, pattern::Pattern};
+use crate::{
+    bag::Bag,
+    pattern::{Optimization, Pattern},
+};
 
-#[derive(clap::Parser)]
-pub enum Program<B>
+#[derive(clap::Parser, Clone)]
+pub struct Program<B>
+where
+    B: Bag,
+{
+    #[command(subcommand)]
+    cmd: Cmd<B>,
+    #[command(flatten)]
+    extra: Extra,
+}
+
+#[derive(clap::Subcommand, Clone)]
+pub enum Cmd<B>
 where
     B: Bag,
 {
@@ -11,7 +25,15 @@ where
         #[arg(short = 'p', long = "pattern")]
         pattern: Text<Pattern<B>>,
     },
+    Ast {
+        #[arg(short = 'p', long = "pattern")]
+        pattern: Text<Pattern<B>>,
+    },
     Count {
+        #[arg(short = 'p', long = "pattern")]
+        pattern: Text<Pattern<B>>,
+    },
+    Simplify {
         #[arg(short = 'p', long = "pattern")]
         pattern: Text<Pattern<B>>,
     },
@@ -25,34 +47,51 @@ where
     },
 }
 
+#[derive(clap::Args, Clone)]
+pub struct Extra {
+    #[arg(short = 't', long = "timing", default_value_t = false)]
+    timing: bool,
+}
+
 impl<B> Program<B>
 where
     B: Bag,
 {
     pub fn run(self) {
-        match self {
-            Self::Expand { pattern } => {
+        let i = Instant::now();
+        match self.cmd {
+            Cmd::Expand { pattern } => {
                 for q in pattern.queues() {
                     println!("{q:?}");
                 }
             }
-            Self::Count { pattern } => {
+            Cmd::Simplify { pattern } => {
+                let x = pattern.simplify();
+                println!("{}", x);
+            }
+            Cmd::Ast { pattern } => {
+                println!("{:#?}", *pattern);
+            }
+            Cmd::Count { pattern } => {
                 println!("{}", pattern.count());
             }
 
-            Self::Find {
+            Cmd::Find {
                 universe,
                 set,
                 opt_level,
-            } => {
-                match Pattern::<B>::find(&universe.queues(), &set.queues(), opt_level) {
-                    Some(z) => println!("{z}"),
-                    None => eprintln!("failed to find a pattern"),
-                }
+            } => match Pattern::<B>::find(&universe.queues(), &set.queues(), opt_level) {
+                Some(z) => println!("{z}"),
+                None => eprintln!("failed to find a pattern"),
+            },
+        }
 
-            }
+        if self.extra.timing {
+            let el = i.elapsed();
+            println!("finished in \x1b[33m{:.3}ms\x1b[0m", el.as_secs_f64() * 1000.0);
         }
     }
+    
 }
 
 #[derive(Clone)]
